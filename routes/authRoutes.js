@@ -2,19 +2,22 @@ const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const otpGenerator = require("otp-generator");
 
 const User = require("../model/user");
-const sendEmail = require("../utlies/sendEmail"); 
+const sendEmail = require("../utlies/sendEmail");
 
 const {
   registerSchema,
   verifySchema,
   loginSchema,
   resendOtpSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } = require("../validation/userValidator");
 
-// Utility function to generate OTP
+// Reusable OTP generator
 const generateOTP = () =>
   otpGenerator.generate(6, {
     digits: true,
@@ -23,7 +26,9 @@ const generateOTP = () =>
     specialChars: false,
   });
 
+// ─────────────────────────────────────────────
 // REGISTER
+// ─────────────────────────────────────────────
 router.post("/register", async (req, res) => {
   try {
     const { error, value } = registerSchema.validate(req.body, {
@@ -49,7 +54,7 @@ router.post("/register", async (req, res) => {
       ...value,
       password: hashedPassword,
       otp,
-      otpExpiry: Date.now() + 10 * 60 * 1000, // 10 minutes
+      otpExpiry: Date.now() + 10 * 60 * 1000,
     });
 
     await sendEmail(
@@ -68,148 +73,30 @@ router.post("/register", async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────
 // VERIFY OTP
+// ─────────────────────────────────────────────
 router.post("/verify-otp", async (req, res) => {
-  try {
-    const { error, value } = verifySchema.validate(req.body, {
-      abortEarly: false,
-    });
-    if (error) {
-      return res.status(400).json({
-        message: "Validation failed",
-        errors: error.details.map((d) => d.message),
-      });
-    }
-
-    const { email, otp } = value;
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    if (
-      !user.otp ||
-      user.otp !== otp ||
-      !user.otpExpiry ||
-      user.otpExpiry < Date.now()
-    ) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
-    }
-
-    user.isVerified = true;
-    user.otp = null;
-    user.otpExpiry = null;
-    await user.save();
-
-    return res.json({ message: "Email verified successfully" });
-  } catch (error) {
-    console.error("OTP verification error:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
+  // ... your existing code (looks good) ...
 });
 
+// ─────────────────────────────────────────────
 // LOGIN
+// ─────────────────────────────────────────────
 router.post("/login", async (req, res) => {
-  try {
-    const { error, value } = loginSchema.validate(req.body, {
-      abortEarly: false,
-    });
-    if (error) {
-      return res.status(400).json({
-        message: "Validation failed",
-        errors: error.details.map((d) => d.message),
-      });
-    }
-
-    const { email, password } = value;
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    if (!(await bcrypt.compare(password, user.password))) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    if (!user.isVerified) {
-      return res.status(403).json({
-        message: "Email not verified",
-        isVerified: false,
-        email: user.email,
-      });
-    }
-
-    const token = jwt.sign(
-      {
-        id: user._id,
-        role: user.role,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "2d" }
-    );
-
-    return res.json({
-      message: "Login successful",
-      token,
-      user: {
-        id: user._id,
-        email: user.email,
-        role: user.role,
-        isVerified: user.isVerified,
-      },
-    });
-  } catch (error) {
-    console.error("Login error:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
+  // ... your existing code (looks good) ...
 });
 
+// ─────────────────────────────────────────────
 // RESEND OTP
+// ─────────────────────────────────────────────
 router.post("/resend-otp", async (req, res) => {
-  try {
-    const { error, value } = resendOtpSchema.validate(req.body, {
-      abortEarly: false,
-    });
-    if (error) {
-      return res.status(400).json({
-        message: "Validation failed",
-        errors: error.details.map((d) => d.message),
-      });
-    }
-
-    const { email } = value;
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    if (user.isVerified) {
-      return res.status(400).json({ message: "Email is already verified" });
-    }
-
-    const newOtp = generateOTP();
-    user.otp = newOtp;
-    user.otpExpiry = Date.now() + 10 * 60 * 1000;
-
-    await user.save();
-
-    await sendEmail(
-      email,
-      "Your New OTP Code",
-      `Hello,\n\nYour new OTP code is: ${newOtp}\n\nValid for 10 minutes.\n\nThank you!`
-    );
-
-    return res.json({ message: "New OTP sent successfully" });
-  } catch (error) {
-    console.error("Resend OTP error:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
+  // ... your existing code (looks good) ...
 });
 
+// ─────────────────────────────────────────────
 // FORGOT PASSWORD
+// ─────────────────────────────────────────────
 router.post("/forgot-password", async (req, res) => {
   try {
     const { error, value } = forgotPasswordSchema.validate(req.body, {
@@ -226,29 +113,75 @@ router.post("/forgot-password", async (req, res) => {
 
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      // For security, don't tell if email exists
+      return res.json({
+        message: "If the email exists, a reset link has been sent",
+      });
     }
 
-    const resetToken = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+    // Generate secure reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
 
     user.resetPasswordToken = resetToken;
-    user.resetPasswordExpiry = Date.now() + 1 * 60 * 60 * 1000;
+    user.resetPasswordExpiry = Date.now() + 60 * 60 * 1000; // 1 hour
 
     await user.save();
+
+    const resetUrl = `${
+      process.env.CLIENT_ORIGIN?.trim() || "http://localhost:3000"
+    }/reset-password/${resetToken}`;
 
     await sendEmail(
       email,
       "Reset Your Password",
-      `Hello,\n\nYou requested a password reset. Click the link below to reset your password:\n\n${process.env.CLIENT_ORIGIN}/reset-password/${resetToken}\n\nThis link will expire in 1 hour.\n\nThank you!`
+      `Hello,\n\nYou (or someone else) requested a password reset.\n\n` +
+        `Click the link below to reset your password:\n${resetUrl}\n\n` +
+        `This link will expire in 1 hour.\n\n` +
+        `If you didn't request this, please ignore this email.\n\nThank you!`
     );
 
-    return res.json({ message: "Password reset email sent successfully" });
+    return res.json({
+      message: "If the email exists, a password reset link has been sent",
+    });
   } catch (error) {
     console.error("Forgot password error:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// reset password
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { error, value } = resetPasswordSchema.validate(req.body, {
+      abortEarly: false,
+    });
+    if (error) {
+      return res.status(400).json({
+        message: "Validation failed",
+        errors: error.details.map((d) => d.message),
+      });
+    }
+
+    const { token, newPassword } = value;
+
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpiry: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired token" });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 12);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpiry = undefined;
+
+    await user.save();
+
+    return res.json({ message: "Password reset successfully" });
+  } catch (error) {
+    console.error("Reset password error:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 });
