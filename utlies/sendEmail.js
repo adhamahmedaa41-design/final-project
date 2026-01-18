@@ -1,16 +1,14 @@
 // sendEmail.js
-require("dotenv").config(); // ← this line is critical!
+require("dotenv").config();
 
 const nodemailer = require("nodemailer");
 
-async function sendEmail(to, subject, text) {
+async function sendEmail(to, subject, text, html = null) {
   try {
-    // Debug - see what values are actually used
     console.log("Email config:");
     console.log("  Host:", process.env.SMTP_HOST);
     console.log("  Port:", process.env.SMTP_PORT);
     console.log("  User:", process.env.EMAIL_USER);
-    console.log("  Pass length:", process.env.EMAIL_PASS?.length || "MISSING");
 
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || "smtp.ethereal.email",
@@ -22,12 +20,22 @@ async function sendEmail(to, subject, text) {
       },
     });
 
-    const info = await transporter.sendMail({
+    const mailOptions = {
       from: `"Dev App" <${process.env.EMAIL_USER}>`,
       to,
       subject,
-      text,
-    });
+    };
+
+    // Send HTML if provided, otherwise plain text
+    if (html) {
+      mailOptions.html = html;
+      // Also include text version for email clients that don't support HTML
+      mailOptions.text = text || html.replace(/<[^>]*>/g, "");
+    } else {
+      mailOptions.text = text;
+    }
+
+    const info = await transporter.sendMail(mailOptions);
 
     console.log("Email sent! Message ID:", info.messageId);
     console.log("Preview URL:", nodemailer.getTestMessageUrl(info));

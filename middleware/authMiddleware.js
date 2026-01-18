@@ -1,30 +1,35 @@
 const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
-dotenv.config(); 
+dotenv.config();
 
 // Auth middleware to validate if the user is authenticated
 function authMiddleware(req, res, next) {
-  // validate headers
   try {
-    const auth = req.header("Authorization")?.replace("Bearer ", "");
-    if (!auth) {
+    // Get authorization header
+    let authHeader = req.headers.authorization || req.headers.Authorization; // handle case differences
+    if (!authHeader) {
       return res
         .status(401)
-        .json({ message: "Access denied. No token provided." });
+        .json({ message: "Access denied. No authorization header provided." });
     }
-    // validate token
-    const token = auth.split(" ")[1];
+
+    // Strip "Bearer " prefix if present
+    const token = authHeader.replace(/^Bearer\s+/i, ""); // case-insensitive, more robust
+
     if (!token) {
       return res
         .status(401)
-        .json({ message: "Access denied. No token provided." });
+        .json({ message: "Access denied. Invalid token format." });
     }
-    // verify token
+
+    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
   } catch (error) {
-    return res.status(401).json({ message: "Invalid token." });
+    console.error("Auth middleware error:", error); // optional debug
+    return res.status(401).json({ message: "Invalid or expired token." });
   }
 }
+
 module.exports = authMiddleware;

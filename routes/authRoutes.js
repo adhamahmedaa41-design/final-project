@@ -49,7 +49,7 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    const { email, password } = value;
+    const { email, password, name } = value;
 
     if (await User.exists({ email })) {
       return res.status(409).json({ message: "Email already registered" });
@@ -63,6 +63,7 @@ router.post("/register", async (req, res) => {
       password: hashedPassword,
       otp,
       otpExpiry: Date.now() + 10 * 60 * 1000, // 10 minutes
+      name,
     });
 
     await sendEmail(
@@ -73,10 +74,9 @@ router.post("/register", async (req, res) => {
 
     return res.status(201).json({
       message: "Registration successful. Check your email for OTP.",
-      userId: user._id,
     });
   } catch (error) {
-    console.error("Registration error:", error);
+    console.error("Register error:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -99,25 +99,42 @@ router.post("/verify-otp", async (req, res) => {
     const { email, otp } = value;
 
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (
-      !user.otp ||
-      user.otp !== otp ||
-      !user.otpExpiry ||
-      user.otpExpiry < Date.now()
-    ) {
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ message: "User already verified" });
+    }
+
+    if (user.otp !== otp || user.otpExpiry < Date.now()) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
     }
 
     user.isVerified = true;
-    user.otp = null;
-    user.otpExpiry = null;
+    user.otp = undefined;
+    user.otpExpiry = undefined;
     await user.save();
 
-    return res.json({ message: "Email verified successfully" });
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
+
+    return res.json({
+      message: "Email verified successfully",
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+      },
+    });
   } catch (error) {
-    console.error("OTP verification error:", error);
+    console.error("Verify OTP error:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -140,15 +157,18 @@ router.post("/login", async (req, res) => {
     const { email, password } = value;
 
     const user = await User.findOne({ email });
-    if (!user) return res.status(401).json({ message: "Invalid credentials" });
+    if (!user) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
 
-    if (!(await bcrypt.compare(password, user.password))) {
-      return res.status(401).json({ message: "Invalid credentials" });
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid email or password" });
     }
 
     if (!user.isVerified) {
       return res.status(403).json({
-        message: "Email not verified",
+        message: "Please verify your email first",
         isVerified: false,
         email: user.email,
       });
@@ -157,7 +177,7 @@ router.post("/login", async (req, res) => {
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "2d" }
+      { expiresIn: process.env.JWT_EXPIRES_IN }
     );
 
     return res.json({
@@ -177,7 +197,7 @@ router.post("/login", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// RESEND OTP (with rate limiting)
+// RESEND OTP
 // ─────────────────────────────────────────────
 router.post("/resend-otp", async (req, res) => {
   try {
@@ -193,41 +213,34 @@ router.post("/resend-otp", async (req, res) => {
 
     const { email } = value;
 
-    // Rate limit check
-    const lastResend = resendTimestamps.get(email);
-    const now = Date.now();
-    if (lastResend && now - lastResend < OTP_RESEND_LIMIT_MS) {
-      const secondsLeft = Math.ceil(
-        (OTP_RESEND_LIMIT_MS - (now - lastResend)) / 1000
-      );
-      return res.status(429).json({
-        message: `Please wait ${secondsLeft} seconds before requesting a new OTP`,
-        waitSeconds: secondsLeft,
-      });
-    }
-
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     if (user.isVerified) {
-      return res.status(400).json({ message: "Email is already verified" });
+      return res.status(400).json({ message: "User already verified" });
     }
 
-    const newOtp = generateOTP();
-    user.otp = newOtp;
-    user.otpExpiry = Date.now() + 10 * 60 * 1000;
+    const lastResend = resendTimestamps.get(email) || 0;
+    if (Date.now() - lastResend < OTP_RESEND_LIMIT_MS) {
+      return res.status(429).json({ message: "Please wait before resending" });
+    }
+
+    const otp = generateOTP();
+    user.otp = otp;
+    user.otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
     await user.save();
 
     await sendEmail(
       email,
       "Your New OTP Code",
-      `Hello,\n\nYour new OTP code is: ${newOtp}\n\nValid for 10 minutes.\n\nThank you!`
+      `Hello,\n\nYour new OTP code is: ${otp}\n\nValid for 10 minutes.\n\nThank you!`
     );
 
-    // Update last resend time
-    resendTimestamps.set(email, now);
+    resendTimestamps.set(email, Date.now());
 
-    return res.json({ message: "New OTP sent successfully" });
+    return res.json({ message: "New OTP sent to your email" });
   } catch (error) {
     console.error("Resend OTP error:", error);
     return res.status(500).json({ message: "Internal server error" });
@@ -253,38 +266,40 @@ router.post("/forgot-password", async (req, res) => {
 
     const user = await User.findOne({ email });
     if (!user) {
-      return res.json({
-        message: "If the email exists, a reset link has been sent",
-      });
+      // Don't reveal if email exists
+      return res.json({ message: "Password reset link has been sent" });
     }
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetToken = crypto.randomBytes(20).toString("hex");
     user.resetPasswordToken = resetToken;
-    user.resetPasswordExpiry = Date.now() + 60 * 60 * 1000; // 1 hour
+    user.resetPasswordExpiry = Date.now() + 3600000; // 1 hour
     await user.save();
 
-    const resetUrl = `${
-      process.env.CLIENT_ORIGIN?.trim() || "http://localhost:3000"
-    }/reset-password/${resetToken}`;
+    // SIMPLIFY THIS - No hash, just clean URL
+    const resetUrl = `http://localhost:5174/reset-password/${resetToken}`;
 
+    // In FORGOT PASSWORD route, update the sendEmail call:
     await sendEmail(
       email,
-      "Reset Your Password",
-      `Hello,\n\nYou (or someone else) requested a password reset.\n\n` +
-        `Click the link below to reset your password:\n${resetUrl}\n\n` +
-        `This link will expire in 1 hour.\n\n` +
-        `If you didn't request this, please ignore this email.\n\nThank you!`
+      "Password Reset Request",
+      `Hello,\n\nClick this link to reset your password: ${resetUrl}\n\nValid for 1 hour.\n\nIf you didn't request this, ignore this email.`,
+      // Add simple HTML with hyperlink:
+      `<p>Hello,</p>
+   <p>Click this link to reset your password: <a href="${resetUrl}">Reset Password</a></p>
+   <p><strong>Valid for 1 hour.</strong></p>
+   <p>If you didn't request this, ignore this email.</p>`
     );
 
+    // Return token for frontend auto-navigation
     return res.json({
-      message: "If the email exists, a password reset link has been sent",
+      message: "Password reset link has been sent",
+      token: resetToken,
     });
   } catch (error) {
     console.error("Forgot password error:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 });
-
 // ─────────────────────────────────────────────
 // RESET PASSWORD
 // ─────────────────────────────────────────────
@@ -328,7 +343,9 @@ router.post("/reset-password", async (req, res) => {
 // ─────────────────────────────────────────────
 router.get("/me", authMiddleware, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select(
+    // Changed from req.user._id → req.user.id
+    // because your JWT payload contains "id" (not "_id")
+    const user = await User.findById(req.user.id).select(
       "-password -resetPasswordToken -resetPasswordExpiry -otp -otpExpiry"
     );
 
