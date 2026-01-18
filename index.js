@@ -84,11 +84,11 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
 
 
 // serve static files
-// app.use("/public", express.static(path.join(__dirname, "public"))); srever access default
+app.use("/public", express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // update profile route
-app.use(profileRoutes);
+app.use("/api/users", profileRoutes);
 
 // Root route
 app.get("/", (req, res) => {
