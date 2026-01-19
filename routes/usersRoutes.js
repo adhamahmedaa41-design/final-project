@@ -1,19 +1,18 @@
-// routes/usersRoutes.js
 const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const User = require("../model/user");
-const authMiddleware = require("../middleware/authMiddleware");
 
-// Ensure uploads directory exists
+// FIX: Import authMiddleware correctly - it exports { authMiddleware }
+const { authMiddleware } = require("../middleware/authMiddleware");
+
 const uploadsDir = "./uploads";
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure Multer for profile pictures
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadsDir);
@@ -42,18 +41,17 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
+  limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: fileFilter,
 });
 
 // PUT /api/users/update-avatar
 router.put(
   "/update-avatar",
-  authMiddleware,
+  authMiddleware, // Now this is a function, not an object
   upload.single("avatar"),
   async (req, res) => {
     try {
-      // 1. Get authenticated user
       const user = await User.findById(req.user.id);
 
       if (!user) {
@@ -63,7 +61,6 @@ router.put(
         });
       }
 
-      // 2. Check if file was actually uploaded
       if (!req.file) {
         return res.status(400).json({
           success: false,
@@ -71,19 +68,17 @@ router.put(
         });
       }
 
-      // 3. Save new path
       const avatarPath = `/uploads/${req.file.filename}`;
-      user.profilepic = avatarPath;
+      user.profilePic = avatarPath;
       await user.save();
 
-      // 4. Return user data without sensitive info
       const userResponse = {
         id: user._id,
         email: user.email,
         name: user.name,
         role: user.role,
         isVerified: user.isVerified,
-        profilepic: user.profilepic,
+        profilePic: user.profilePic,
         bio: user.bio,
       };
 
@@ -96,7 +91,6 @@ router.put(
     } catch (error) {
       console.error("Avatar update error:", error);
 
-      // Handle multer errors
       if (error.code === "LIMIT_FILE_SIZE") {
         return res.status(400).json({
           success: false,
@@ -125,7 +119,6 @@ router.put("/update-profile", authMiddleware, async (req, res) => {
   try {
     const { name, bio } = req.body;
 
-    // Validate input
     if (!name && !bio) {
       return res.status(400).json({
         success: false,
@@ -142,7 +135,6 @@ router.put("/update-profile", authMiddleware, async (req, res) => {
       });
     }
 
-    // Update fields if provided
     if (name !== undefined) user.name = name;
     if (bio !== undefined) user.bio = bio;
 
@@ -154,7 +146,7 @@ router.put("/update-profile", authMiddleware, async (req, res) => {
       name: user.name,
       role: user.role,
       isVerified: user.isVerified,
-      profilepic: user.profilepic,
+      profilePic: user.profilePic,
       bio: user.bio,
     };
 
@@ -195,7 +187,7 @@ router.get("/profile", authMiddleware, async (req, res) => {
         name: user.name,
         role: user.role,
         isVerified: user.isVerified,
-        profilepic: user.profilepic,
+        profilePic: user.profilePic,
         bio: user.bio,
       },
     });

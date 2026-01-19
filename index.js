@@ -8,6 +8,7 @@ const fs = require("fs");
 const profileRoutes = require("./routes/usersRoutes");
 const connectDB = require("./config/dbConfig");
 const authRoutes = require("./routes/authRoutes");
+const postsRoutes = require("./routes/postsRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,10 +16,11 @@ const PORT = process.env.PORT || 3000;
 // Ensure uploads directory exists
 const uploadsDir = "./uploads";
 if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure Multer
+// REMOVED: Duplicate multer config - using the one from upload.js instead
+// Only keep this if you need a simple upload for the /api/upload route
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadsDir);
@@ -31,13 +33,11 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-// Middleware
 app.use(express.json());
 
-// CORS
 let corsOrigin = "*";
 try {
   const isProd = JSON.parse(process.env.PRODUCTION_ORIGIN || "false");
@@ -49,17 +49,27 @@ try {
 }
 app.use(cors({ origin: corsOrigin }));
 
-// Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
 });
 app.use(limiter);
 
+// Debug middleware loading
+console.log("=== DEBUG: Checking authMiddleware ===");
+try {
+  const auth = require("./middleware/authMiddleware");
+  console.log("✅ authMiddleware loaded successfully");
+  console.log("Exports:", Object.keys(auth));
+} catch (err) {
+  console.error("❌ Error loading authMiddleware:", err.message);
+}
+
 // Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/posts", postsRoutes);
 
-// File upload route
+// Simple file upload route (using the simple multer config)
 app.post("/api/upload", upload.single("file"), (req, res) => {
   try {
     if (!req.file) {
@@ -82,12 +92,11 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
   }
 });
 
-
-// serve static files
+// Serve static files
 app.use("/public", express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// update profile route
+// User profile routes
 app.use("/api/users", profileRoutes);
 
 // Root route

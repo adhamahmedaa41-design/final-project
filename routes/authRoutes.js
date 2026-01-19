@@ -7,7 +7,9 @@ const otpGenerator = require("otp-generator");
 
 const User = require("../model/user");
 const sendEmail = require("../utlies/sendEmail");
-const authMiddleware = require("../middleware/authMiddleware");
+
+// FIX: Import authMiddleware correctly
+const { authMiddleware } = require("../middleware/authMiddleware");
 
 const {
   registerSchema,
@@ -17,7 +19,6 @@ const {
   forgotPasswordSchema,
   resetPasswordSchema,
 } = require("../validation/userValidator");
-
 // Reusable OTP generator
 const generateOTP = () =>
   otpGenerator.generate(6, {
@@ -27,12 +28,9 @@ const generateOTP = () =>
     specialChars: false,
   });
 
-// ─────────────────────────────────────────────
-// Simple in-memory rate limit for resend-otp
-// key = email, value = last resend timestamp (ms)
-// ─────────────────────────────────────────────
-const OTP_RESEND_LIMIT_MS = 60 * 1000; // 60 seconds
-const resendTimestamps = new Map(); // email → last resend time
+// Rate limit for resend-otp
+const OTP_RESEND_LIMIT_MS = 60 * 1000;
+const resendTimestamps = new Map();
 
 // ─────────────────────────────────────────────
 // REGISTER
@@ -63,7 +61,6 @@ router.post("/register", async (req, res) => {
       password: hashedPassword,
       otp,
       otpExpiry: Date.now() + 10 * 60 * 1000, // 10 minutes
-      name,
     });
 
     await sendEmail(
@@ -229,7 +226,7 @@ router.post("/resend-otp", async (req, res) => {
 
     const otp = generateOTP();
     user.otp = otp;
-    user.otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+    user.otpExpiry = Date.now() + 10 * 60 * 1000;
     await user.save();
 
     await sendEmail(
@@ -266,31 +263,26 @@ router.post("/forgot-password", async (req, res) => {
 
     const user = await User.findOne({ email });
     if (!user) {
-      // Don't reveal if email exists
       return res.json({ message: "Password reset link has been sent" });
     }
 
     const resetToken = crypto.randomBytes(20).toString("hex");
     user.resetPasswordToken = resetToken;
-    user.resetPasswordExpiry = Date.now() + 3600000; // 1 hour
+    user.resetPasswordExpiry = Date.now() + 3600000;
     await user.save();
 
-    // SIMPLIFY THIS - No hash, just clean URL
     const resetUrl = `http://localhost:5174/reset-password/${resetToken}`;
 
-    // In FORGOT PASSWORD route, update the sendEmail call:
     await sendEmail(
       email,
       "Password Reset Request",
       `Hello,\n\nClick this link to reset your password: ${resetUrl}\n\nValid for 1 hour.\n\nIf you didn't request this, ignore this email.`,
-      // Add simple HTML with hyperlink:
       `<p>Hello,</p>
    <p>Click this link to reset your password: <a href="${resetUrl}">Reset Password</a></p>
    <p><strong>Valid for 1 hour.</strong></p>
    <p>If you didn't request this, ignore this email.</p>`
     );
 
-    // Return token for frontend auto-navigation
     return res.json({
       message: "Password reset link has been sent",
       token: resetToken,
@@ -300,6 +292,7 @@ router.post("/forgot-password", async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 });
+
 // ─────────────────────────────────────────────
 // RESET PASSWORD
 // ─────────────────────────────────────────────
@@ -343,8 +336,6 @@ router.post("/reset-password", async (req, res) => {
 // ─────────────────────────────────────────────
 router.get("/me", authMiddleware, async (req, res) => {
   try {
-    // Changed from req.user._id → req.user.id
-    // because your JWT payload contains "id" (not "_id")
     const user = await User.findById(req.user.id).select(
       "-password -resetPasswordToken -resetPasswordExpiry -otp -otpExpiry"
     );
@@ -358,8 +349,11 @@ router.get("/me", authMiddleware, async (req, res) => {
       user: {
         id: user._id,
         email: user.email,
+        name: user.name,
         role: user.role,
         isVerified: user.isVerified,
+        profilePic: user.profilePic,
+        bio: user.bio,
       },
     });
   } catch (error) {

@@ -6,7 +6,7 @@ dotenv.config();
 function authMiddleware(req, res, next) {
   try {
     // Get authorization header
-    let authHeader = req.headers.authorization || req.headers.Authorization; // handle case differences
+    let authHeader = req.headers.authorization || req.headers.Authorization;
     if (!authHeader) {
       return res
         .status(401)
@@ -14,7 +14,7 @@ function authMiddleware(req, res, next) {
     }
 
     // Strip "Bearer " prefix if present
-    const token = authHeader.replace(/^Bearer\s+/i, ""); // case-insensitive, more robust
+    const token = authHeader.replace(/^Bearer\s+/i, "");
 
     if (!token) {
       return res
@@ -27,9 +27,10 @@ function authMiddleware(req, res, next) {
     req.user = decoded;
     next();
   } catch (error) {
-    console.error("Auth middleware error:", error); // optional debug
+    console.error("Auth middleware error:", error);
     return res.status(401).json({ message: "Invalid or expired token." });
   }
 }
 
-module.exports = authMiddleware;
+// FIX: Export as object for destructuring compatibility
+module.exports = { authMiddleware };
