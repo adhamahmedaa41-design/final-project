@@ -1,3 +1,4 @@
+// model/comment.js
 const mongoose = require("mongoose");
 
 const commentSchema = new mongoose.Schema(
@@ -9,6 +10,8 @@ const commentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const Comment = mongoose.model("Comment", commentSchema);
+// Prevent model overwrite error (the key fix)
+const Comment =
+  mongoose.models.Comment || mongoose.model("Comment", commentSchema);
 
-module.exports = { Comment };
+module.exports = Comment; // ← export directly (most common & clean style)

@@ -8,6 +8,7 @@ const fs = require("fs");
 const profileRoutes = require("./routes/usersRoutes");
 const connectDB = require("./config/dbConfig");
 const authRoutes = require("./routes/authRoutes");
+const commentsRoutes = require("./routes/commentsRoutes");
 const postsRoutes = require("./routes/postsRoutes");
 
 const app = express();
@@ -68,6 +69,7 @@ try {
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/posts", postsRoutes);
+app.use("/api/comments", commentsRoutes);
 
 // Simple file upload route (using the simple multer config)
 app.post("/api/upload", upload.single("file"), (req, res) => {

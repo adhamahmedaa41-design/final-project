@@ -1,3 +1,4 @@
+// model/post.js
 const mongoose = require("mongoose");
 
 const postSchema = new mongoose.Schema(
@@ -10,6 +11,7 @@ const postSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const Post = mongoose.model("Post", postSchema);
+// Prevent model overwrite error
+const Post = mongoose.models.Post || mongoose.model("Post", postSchema);
 
-module.exports = { Post };
+module.exports = Post;
