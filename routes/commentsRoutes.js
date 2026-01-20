@@ -1,8 +1,8 @@
-// routes/commentsRoutes.js
+// routes/commentsRoutes.js - UPDATED VERSION
 const express = require("express");
 const { authMiddleware } = require("../middleware/authMiddleware");
 const { createCommentSchema } = require("../validation/commentValidator");
-const Comment = require("../model/comment"); // ← FIXED: no curly braces, lowercase 'c' in comment
+const Comment = require("../model/comment");
 
 const router = express.Router();
 
@@ -28,11 +28,17 @@ router.post("/", authMiddleware, async function (req, res) {
     const { postId, text } = value;
 
     // Create Comment
-    const comment = await Comment.create({ text, postId, userId });
+    const newComment = await Comment.create({ text, postId, userId });
+
+    // Populate user data before sending response
+    const populatedComment = await Comment.findById(newComment._id).populate(
+      "userId",
+      "name profilePic"
+    );
 
     res.status(201).json({
       message: "Comment Added Successfully",
-      comment,
+      comment: populatedComment,
     });
   } catch (error) {
     console.log(error);
@@ -50,10 +56,13 @@ router.patch("/:id", authMiddleware, async function (req, res) {
 
     // Update Comment - only if owned by current user
     const comment = await Comment.findOneAndUpdate(
-      { _id: id, userId }, // must belong to current user
+      { _id: id, userId },
       { text },
-      { new: true }
-    );
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).populate("userId", "name profilePic"); // ← ADDED POPULATION
 
     if (!comment) {
       return res.status(403).json({ message: "Access Denied!" });
@@ -69,7 +78,7 @@ router.patch("/:id", authMiddleware, async function (req, res) {
   }
 });
 
-// Delete Comment
+// Delete Comment - No change needed
 router.delete("/:id", authMiddleware, async function (req, res) {
   try {
     const id = req.params.id;

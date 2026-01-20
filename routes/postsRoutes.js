@@ -28,14 +28,25 @@ router.post(
   }
 );
 
-// Get All Posts
+// Get All Posts WITH COMMENT COUNTS
 router.get("/", async function (req, res) {
   try {
     const posts = await Post.find()
       .populate("userId", "name profilePic")
       .sort({ createdAt: -1 });
 
-    res.json({ message: "Posts Fetched Successfully", posts });
+    // Add comment count to each post
+    const postsWithCounts = await Promise.all(
+      posts.map(async (post) => {
+        const commentCount = await Comment.countDocuments({ postId: post._id });
+        return {
+          ...post.toObject(),
+          commentsCount: commentCount,
+        };
+      })
+    );
+
+    res.json({ message: "Posts Fetched Successfully", posts: postsWithCounts });
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Internal Server Error!" });
@@ -61,7 +72,14 @@ router.put("/:id/like", authMiddleware, async function (req, res) {
 
     await post.save();
 
-    res.json({ post, likes: post.likes.length });
+    // Add comment count to the response
+    const commentCount = await Comment.countDocuments({ postId: post._id });
+    const postWithCount = {
+      ...post.toObject(),
+      commentsCount: commentCount,
+    };
+
+    res.json({ post: postWithCount, likes: post.likes.length });
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Internal Server Error!" });
